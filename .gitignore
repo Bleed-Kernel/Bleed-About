@@ -1,0 +1,8 @@
+sysroot/
+external/
+bin/
+.vscode/settings.json
+*.d
+.*DS_Store
+libcrime/
+libuikit/

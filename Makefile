@@ -1,0 +1,129 @@
+ELF_TARGET_64 = about
+
+UNAME_S := $(shell uname -s)
+UNAME_M := $(shell uname -m)
+
+ifeq ($(UNAME_S)$(UNAME_M),Darwinarm64)
+CC 	:= x86_64-elf-gcc
+else
+CC 	:= gcc
+endif
+
+ELF_BIN_DIR_64 = bin
+ELF_OBJ_DIR_64 = $(ELF_BIN_DIR_64)/obj
+
+LIB_DIR = sysroot/lib
+LIBC = $(LIB_DIR)/blibc.a
+CRT0 = $(LIB_DIR)/start.o
+
+BLIBC_REPO = https://github.com/Bleed-Kernel/blibc.git
+BLIBC_DIR  ?= external/blibc
+
+CRIME_REPO = https://github.com/Bleed-Kernel/Crime-Scene.git
+CRIME_DIR  ?= $(if $(wildcard ../Crime-Scene/Makefile),../Crime-Scene,external/crime-scene)
+CRIME_OUT  = libcrime
+LIBCRIME   = $(CRIME_OUT)/libcrime.a
+
+UIKIT_REPO = https://github.com/xhcisucks/libuikit.git
+UIKIT_DIR  ?= $(if $(wildcard ../libuikit/Makefile),../libuikit,external/libuikit)
+UIKIT_OUT  = libuikit
+LIBUIKIT   = $(UIKIT_OUT)/libuikit.a
+
+COMMON_CFLAGS = \
+	-ffreestanding \
+	-fno-stack-protector \
+	-fno-stack-check \
+	-Wall -Wextra \
+	-O2 \
+	-nostdlib \
+	-no-pie \
+	-m64 \
+	-Iinclude \
+	-I$(UIKIT_OUT)/include \
+	-I$(CRIME_OUT)/include \
+	-Isysroot/include \
+	-Isysroot/include/bleed \
+	-nostdinc
+
+LDFLAGS = \
+	-static \
+	-nostdlib \
+	-no-pie \
+	-m64 \
+	-L$(LIB_DIR)
+
+SRCS = $(shell find src -name '*.c')
+ELF_OBJS_64 = $(patsubst src/%.c,$(ELF_OBJ_DIR_64)/%.o,$(SRCS))
+
+all: $(ELF_TARGET_64)
+
+$(ELF_TARGET_64): blibc crime uikit $(ELF_OBJS_64)
+	@mkdir -p $(ELF_BIN_DIR_64)
+	$(CC) $(LDFLAGS) \
+		-o $(ELF_BIN_DIR_64)/$(ELF_TARGET_64) \
+		$(CRT0) \
+		$(ELF_OBJS_64) \
+		$(LIBUIKIT) \
+		$(LIBCRIME) \
+		$(LIBC)
+
+$(ELF_OBJ_DIR_64)/%.o: src/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(COMMON_CFLAGS) -MMD -MP -c $< -o $@
+
+-include $(ELF_OBJS_64:.o=.d)
+
+$(ELF_OBJS_64): | blibc crime uikit
+
+blibc: $(LIBC)
+
+$(LIBC):
+	@echo "[BLIBC] Preparing blibc"
+	@if [ ! -d "$(BLIBC_DIR)" ]; then \
+		git clone $(BLIBC_REPO) $(BLIBC_DIR); \
+	fi
+	$(MAKE) -C $(BLIBC_DIR)
+
+	@echo "[BLIBC] Syncing sysroot"
+	@mkdir -p sysroot
+	@cp -r $(BLIBC_DIR)/sysroot/* sysroot/
+
+# a checkout handed in with CRIME_DIR is left as it is, only our own clone gets pulled.
+# cp -p keeps the headers times so a pull that changed nothing doesnt rebuild anything
+crime: blibc
+	@echo "[CRIME] Preparing crime-scene"
+	@if [ ! -d "$(CRIME_DIR)" ]; then \
+		git clone $(CRIME_REPO) $(CRIME_DIR); \
+	elif [ "$(CRIME_DIR)" = "external/crime-scene" ]; then \
+		git -C $(CRIME_DIR) pull --ff-only || echo "[CRIME] couldnt pull, building whats there"; \
+	fi
+	@$(MAKE) -C $(CRIME_DIR) bin/libcrime.a BLIBC_DIR=$(abspath $(BLIBC_DIR))
+	@echo "[CRIME] Syncing $(CRIME_OUT)"
+	@rm -rf $(CRIME_OUT)/include
+	@mkdir -p $(CRIME_OUT)/include/crime
+	@cp -p $(CRIME_DIR)/include/crime/*.h $(CRIME_OUT)/include/crime/
+	@cmp -s $(CRIME_DIR)/bin/libcrime.a $(LIBCRIME) || cp -p $(CRIME_DIR)/bin/libcrime.a $(LIBCRIME)
+
+uikit: crime
+	@echo "[UIKIT] Preparing libuikit"
+	@if [ ! -d "$(UIKIT_DIR)" ]; then \
+		git clone $(UIKIT_REPO) $(UIKIT_DIR); \
+	elif [ "$(UIKIT_DIR)" = "external/libuikit" ]; then \
+		git -C $(UIKIT_DIR) pull --ff-only || echo "[UIKIT] couldnt pull, building whats there"; \
+	fi
+	@$(MAKE) -C $(UIKIT_DIR) bin/libuikit.a BLIBC_DIR=$(abspath $(BLIBC_DIR)) CRIME_DIR=$(abspath $(CRIME_DIR))
+	@echo "[UIKIT] Syncing $(UIKIT_OUT)"
+	@rm -rf $(UIKIT_OUT)/include
+	@mkdir -p $(UIKIT_OUT)/include
+	@cp -p $(UIKIT_DIR)/include/bleed_uikit.h $(UIKIT_OUT)/include/
+	@cmp -s $(UIKIT_DIR)/bin/libuikit.a $(LIBUIKIT) || cp -p $(UIKIT_DIR)/bin/libuikit.a $(LIBUIKIT)
+
+build: all
+
+clean:
+	rm -rf bin
+
+distclean:
+	rm -rf bin sysroot external $(CRIME_OUT) $(UIKIT_OUT)
+
+.PHONY: all build clean distclean blibc crime uikit $(ELF_TARGET_64)
