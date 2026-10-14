@@ -24,7 +24,7 @@ CRIME_DIR  ?= $(if $(wildcard ../Crime-Scene/Makefile),../Crime-Scene,external/c
 CRIME_OUT  = libcrime
 LIBCRIME   = $(CRIME_OUT)/libcrime.a
 
-UIKIT_REPO = https://github.com/xhcisucks/libuikit.git
+UIKIT_REPO = https://github.com/Bleed-Kernel/libuikit.git
 UIKIT_DIR  ?= $(if $(wildcard ../libuikit/Makefile),../libuikit,external/libuikit)
 UIKIT_OUT  = libuikit
 LIBUIKIT   = $(UIKIT_OUT)/libuikit.a
@@ -95,7 +95,7 @@ crime: blibc
 	@if [ ! -d "$(CRIME_DIR)" ]; then \
 		git clone $(CRIME_REPO) $(CRIME_DIR); \
 	elif [ "$(CRIME_DIR)" = "external/crime-scene" ]; then \
-		git -C $(CRIME_DIR) pull --ff-only || echo "[CRIME] couldnt pull, building whats there"; \
+		cd $(CRIME_DIR) && git pull --rebase; \
 	fi
 	@$(MAKE) -C $(CRIME_DIR) bin/libcrime.a BLIBC_DIR=$(abspath $(BLIBC_DIR))
 	@echo "[CRIME] Syncing $(CRIME_OUT)"
@@ -109,7 +109,7 @@ uikit: crime
 	@if [ ! -d "$(UIKIT_DIR)" ]; then \
 		git clone $(UIKIT_REPO) $(UIKIT_DIR); \
 	elif [ "$(UIKIT_DIR)" = "external/libuikit" ]; then \
-		git -C $(UIKIT_DIR) pull --ff-only || echo "[UIKIT] couldnt pull, building whats there"; \
+		cd $(UIKIT_DIR) && git pull --rebase; \
 	fi
 	@$(MAKE) -C $(UIKIT_DIR) bin/libuikit.a BLIBC_DIR=$(abspath $(BLIBC_DIR)) CRIME_DIR=$(abspath $(CRIME_DIR))
 	@echo "[UIKIT] Syncing $(UIKIT_OUT)"
